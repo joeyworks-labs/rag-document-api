@@ -1,59 +1,60 @@
 # RAG Document API
 
-A backend service for document question answering using Retrieval-Augmented Generation (RAG).
+A Retrieval-Augmented Generation (RAG) backend service for document-based question answering.
 
-This project enables users to upload documents and ask questions, with answers generated based on relevant retrieved content.
+Users can upload documents and ask questions through semantic retrieval and LLM-generated responses.
 
 ---
 
 ## Features
 
-* Document upload (`.txt`, `.md`)
-* Text chunking (paragraph-based)
-* Embedding-based semantic retrieval
-* Multi-document support
-* LLM-generated answers
-* Source attribution
-* Debug mode (`retrieved_chunks`)
-* Persistent vector index (no re-embedding on restart)
+- Document upload (`.txt`, `.md`, `.pdf`)
+- Semantic retrieval using embeddings
+- Multi-document retrieval
+- Source attribution
+- Debug retrieval mode
+- Persistent vector index
+- Frontend UI support
 
 ---
 
 ## Architecture
 
-```
+```text
 Client
 ↓
-FastAPI (/ask, /upload)
+FastAPI API Layer
 ↓
 RAG Pipeline
+├─ Document Parsing
 ├─ Chunking
-├─ Embedding (OpenAI)
-├─ Vector Search (cosine similarity)
-├─ Retrieval (top-k + multi-source)
-└─ LLM Answer Generation
+├─ Embedding Generation
+├─ Vector Similarity Search
+├─ Context Retrieval
+└─ LLM Response Generation
 ```
 
 ---
 
 ## API Endpoints
 
-### POST /upload
+### POST `/upload`
 
-Upload a document for indexing.
+Upload and index documents.
 
-**Supported formats**
+Supported formats:
 
-* .txt
-* .md
+- `.txt`
+- `.md`
+- `.pdf`
 
 ---
 
-### POST /ask
+### POST `/ask`
 
-Ask a question based on uploaded documents.
+Ask questions based on indexed documents.
 
-#### Request
+Request:
 
 ```json
 {
@@ -61,34 +62,32 @@ Ask a question based on uploaded documents.
 }
 ```
 
-#### Query Params
+Optional query params:
 
-* `debug` (optional): return retrieved chunks
+- `debug=true`
 
 ---
 
-## Response
-
-### Normal mode
+## Example Response
 
 ```json
 {
   "question": "...",
   "answer": "...",
-  "sources": ["file.md"]
+  "sources": ["architecture.pdf"]
 }
 ```
 
-### Debug mode
+Debug mode:
 
 ```json
 {
   "question": "...",
   "answer": "...",
-  "sources": ["file.md"],
+  "sources": ["architecture.pdf"],
   "retrieved_chunks": [
     {
-      "source": "file.md",
+      "source": "architecture.pdf",
       "content": "..."
     }
   ]
@@ -97,33 +96,20 @@ Ask a question based on uploaded documents.
 
 ---
 
-## How It Works
-
-1. Upload document
-2. Split into chunks (paragraph-based)
-3. Generate embeddings
-4. Store in vector index (JSON)
-
-On query:
-
-1. Embed question
-2. Perform similarity search
-3. Retrieve relevant chunks
-4. Generate answer using LLM
-
----
-
 ## Tech Stack
 
-* Python
-* FastAPI
-* OpenAI API
-* NumPy
-* WSL (recommended dev environment)
+- Python
+- FastAPI
+- OpenAI API
+- NumPy
+- PyMuPDF
+- WSL
 
 ---
 
 ## Setup
+
+Install dependencies:
 
 ```bash
 pip install -r requirements.txt
@@ -131,7 +117,7 @@ pip install -r requirements.txt
 
 Create `.env`:
 
-```
+```env
 OPENAI_API_KEY=your_api_key
 ```
 
@@ -143,41 +129,30 @@ python3 -m uvicorn app.main:app --reload
 
 ---
 
-## Example
+## Current Capabilities
 
-### Question
-
-Compare monolith and microservices
-
-### Answer
-
-Monolith systems are simpler to develop and deploy with lower operational complexity. Microservices provide better scalability and flexibility but introduce higher system complexity and operational overhead.
-
----
-
-## Current Status
-
-This project is a RAG MVP with production-oriented design, including:
-
-* Semantic retrieval (embedding-based)
-* Multi-document reasoning
-* Persistent index
-* Debug visibility
+- Embedding-based semantic retrieval
+- PDF document parsing
+- Persistent vector storage
+- Multi-document reasoning
+- Retrieval debugging support
+- Basic frontend UI integration
 
 ---
 
 ## Future Improvements
 
-* PDF support
-* Incremental indexing (no full rebuild on upload)
-* Vector database integration (e.g. FAISS, Pinecone)
-* Structured output (JSON responses)
-* Frontend UI (e.g. Streamlit)
-* Go-based service layer (gateway / orchestration)
+- Chunking Strategy Optimization
+- Similarity Threshold Control
+- PDF Parsing Quality Enhancement
+- Vector Database Upgrade
+- Metadata Filtering Support
+- Retrieval Reranking Mechanism
+- Hybrid Search Architecture
 
 ---
 
 ## Notes
 
-* `retrieved_chunks` is intended for debugging and evaluation, not end-user display
-* LLM output is constrained to plain text (no markdown formatting)
+- `retrieved_chunks` is intended for debugging and evaluation
+- Responses are generated using retrieved document context
