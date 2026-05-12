@@ -35,7 +35,7 @@ async def upload_document(file: UploadFile = File(...)):
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file uploaded")
 
-    allowed_extensions = {".txt", ".md"}
+    allowed_extensions = (".txt", ".md", ".pdf")
     file_ext = Path(file.filename).suffix.lower()
 
     if file_ext not in allowed_extensions:

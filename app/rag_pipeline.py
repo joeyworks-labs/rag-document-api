@@ -1,4 +1,7 @@
+import os
+import re
 from pathlib import Path
+from pypdf import PdfReader
 
 from app.embeddings import get_client, get_embedding
 from app.vector_store import (
@@ -13,27 +16,70 @@ from app.vector_store import (
 UPLOAD_DIR = Path("data/uploads")
 
 
-def load_documents() -> list[dict]:
+def load_documents():
     documents = []
 
-    for file_path in UPLOAD_DIR.glob("*"):
-        if file_path.suffix.lower() not in {".txt", ".md"}:
+    for filename in os.listdir(UPLOAD_DIR):
+        file_path = os.path.join(UPLOAD_DIR, filename)
+
+        if filename.endswith(".txt") or filename.endswith(".md"):
+            with open(file_path, "r", encoding="utf-8") as f:
+                content = f.read()
+
+        elif filename.endswith(".pdf"):
+            content = load_pdf(file_path)
+
+        else:
             continue
 
-        text = file_path.read_text(encoding="utf-8")
-        documents.append(
-            {
-                "filename": file_path.name,
-                "content": text,
-            }
-        )
+        documents.append({
+            "filename": filename,
+            "content": content
+        })
 
     return documents
 
 
-def split_into_chunks(text: str) -> list[str]:
-    paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
-    return [p for p in paragraphs if len(p) >= 50 and not p.startswith("Q:")]
+def load_pdf(file_path):
+    reader = PdfReader(file_path)
+    text = ""
+
+    for page in reader.pages:
+        page_text = page.extract_text()
+        if page_text:
+            text += page_text + "\n"
+
+    text  = clean_text(text)
+
+    return text
+
+
+def clean_text(text):
+    text = re.sub(r"\n\d+\n", "\n", text)
+
+    text = re.sub(r"\n{2,}", "\n\n", text)
+
+    lines = text.split("\n")
+    cleaned = []
+
+    for line in lines:
+        line = line.strip()
+        if len(line) > 0:
+            cleaned.append(line)
+
+    return "\n".join(cleaned)
+
+
+def split_into_chunks(text, chunk_size=300):
+    words = text.split()
+    chunks = []
+
+    for i in range(0, len(words), chunk_size):
+        chunk = " ".join(words[i:i+chunk_size])
+        if len(chunk) > 50:
+            chunks.append(chunk)
+
+    return chunks
 
 
 def index_documents() -> None:
@@ -70,6 +116,7 @@ def generate_answer(question: str, context_chunks: list[dict]) -> str:
                 "role": "system",
                 "content": (
                     "You are a helpful RAG assistant. "
+                    "Always answer in Traditional Chinese."
                     "Answer the user's question only based on the provided context. "
                     "If the answer is not in the context, say you could not find it in the uploaded documents. "
                     "Return the answer in plain text. "
@@ -114,6 +161,7 @@ def ask_rag(question: str, debug: bool = False) -> dict:
             "retrieved_chunks": [],
         }
 
+    # 問題轉向量
     query_embedding = get_embedding(question)
 
     comparison_keywords = {
@@ -128,6 +176,7 @@ def ask_rag(question: str, debug: bool = False) -> dict:
 
     top_k = 4 if any(word in question_lower for word in comparison_keywords) else 2
 
+    # 向量搜尋
     raw_results = search(query_embedding, top_k=top_k)
 
     if not raw_results:
@@ -161,6 +210,7 @@ def ask_rag(question: str, debug: bool = False) -> dict:
             selected_results.append(item)
             selected_ids.add(item_id)
 
+    # LLM生成答案
     answer = generate_answer(question, selected_results)
     sources = sorted({item["metadata"]["filename"] for item in selected_results})
 

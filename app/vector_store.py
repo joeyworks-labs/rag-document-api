@@ -29,7 +29,7 @@ def cosine_similarity(a, b):
     return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
 
 
-def search(query_embedding, top_k=3):
+def search(query_embedding, top_k):
     query_vector = np.array(query_embedding)
     results = []
 
