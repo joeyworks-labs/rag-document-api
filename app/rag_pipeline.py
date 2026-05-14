@@ -1,7 +1,8 @@
 import os
 import re
 from pathlib import Path
-from pypdf import PdfReader
+
+import fitz
 
 from app.embeddings import get_client, get_embedding
 from app.vector_store import (
@@ -10,7 +11,6 @@ from app.vector_store import (
     load_index_from_disk,
     save_index_to_disk,
     search,
-    vector_db,
 )
 
 UPLOAD_DIR = Path("data/uploads")
@@ -41,15 +41,16 @@ def load_documents():
 
 
 def load_pdf(file_path):
-    reader = PdfReader(file_path)
+    doc = fitz.open(file_path)
     text = ""
 
-    for page in reader.pages:
-        page_text = page.extract_text()
+    for page in doc:
+        page_text = page.get_text()
+
         if page_text:
             text += page_text + "\n"
 
-    text  = clean_text(text)
+    text = clean_text(text)
 
     return text
 
@@ -64,18 +65,22 @@ def clean_text(text):
 
     for line in lines:
         line = line.strip()
+
         if len(line) > 0:
             cleaned.append(line)
 
     return "\n".join(cleaned)
 
 
-def split_into_chunks(text, chunk_size=300):
+def split_into_chunks(text, chunk_size=300, overlap=50):
     words = text.split()
     chunks = []
 
-    for i in range(0, len(words), chunk_size):
-        chunk = " ".join(words[i:i+chunk_size])
+    step = chunk_size - overlap
+
+    for i in range(0, len(words), step):
+        chunk = " ".join(words[i:i + chunk_size])
+
         if len(chunk) > 50:
             chunks.append(chunk)
 
@@ -92,10 +97,13 @@ def index_documents() -> None:
 
         for chunk in chunks:
             embedding = get_embedding(chunk)
+
             add_vector(
                 embedding=embedding,
                 text=chunk,
-                metadata={"filename": doc["filename"]},
+                metadata={
+                    "filename": doc["filename"]
+                },
             )
 
     save_index_to_disk()
@@ -116,7 +124,7 @@ def generate_answer(question: str, context_chunks: list[dict]) -> str:
                 "role": "system",
                 "content": (
                     "You are a helpful RAG assistant. "
-                    "Always answer in Traditional Chinese."
+                    #"Always answer in Traditional Chinese. "
                     "Answer the user's question only based on the provided context. "
                     "If the answer is not in the context, say you could not find it in the uploaded documents. "
                     "Return the answer in plain text. "
@@ -141,7 +149,7 @@ def generate_answer(question: str, context_chunks: list[dict]) -> str:
     return response.choices[0].message.content or "No answer generated."
 
 
-def ask_rag(question: str, debug: bool = False) -> dict:
+def ask_rag(question: str, debug: bool = False, filename: str | None = None) -> dict:
     if not question.strip():
         return {
             "question": question,
@@ -150,18 +158,6 @@ def ask_rag(question: str, debug: bool = False) -> dict:
             "retrieved_chunks": [],
         }
 
-    if not vector_db:
-        load_index_from_disk()
-
-    if not vector_db:
-        return {
-            "question": question,
-            "answer": "No documents uploaded yet.",
-            "sources": [],
-            "retrieved_chunks": [],
-        }
-
-    # 問題轉向量
     query_embedding = get_embedding(question)
 
     comparison_keywords = {
@@ -172,12 +168,26 @@ def ask_rag(question: str, debug: bool = False) -> dict:
         "trade-off",
         "trade-offs",
     }
+
     question_lower = question.lower()
 
-    top_k = 4 if any(word in question_lower for word in comparison_keywords) else 2
+    top_k = 4 if any(
+        word in question_lower
+        for word in comparison_keywords
+    ) else 2
 
-    # 向量搜尋
-    raw_results = search(query_embedding, top_k=top_k)
+    raw_results = search(
+        query_embedding,
+        top_k=top_k,
+        filename=filename,
+    )
+
+    similarity_threshold = 0.15
+
+    raw_results = [
+        item for item in raw_results
+        if item["score"] >= similarity_threshold
+    ]
 
     if not raw_results:
         return {
@@ -210,17 +220,12 @@ def ask_rag(question: str, debug: bool = False) -> dict:
             selected_results.append(item)
             selected_ids.add(item_id)
 
-    # LLM生成答案
     answer = generate_answer(question, selected_results)
-    sources = sorted({item["metadata"]["filename"] for item in selected_results})
 
-    retrieved_chunks = [
-        {
-            "source": item["metadata"]["filename"],
-            "content": item["text"],
-        }
+    sources = sorted({
+        item["metadata"]["filename"]
         for item in selected_results
-    ]
+    })
 
     result = {
         "question": question,
@@ -232,7 +237,8 @@ def ask_rag(question: str, debug: bool = False) -> dict:
         result["retrieved_chunks"] = [
             {
                 "source": item["metadata"]["filename"],
-                "content": item["text"]
+                "content": item["text"],
+                "score": item["score"],
             }
             for item in selected_results
         ]

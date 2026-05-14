@@ -17,6 +17,7 @@ UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
 
 class AskRequest(BaseModel):
     question: str
+    filename: str | None = None
 
 
 @app.get("/")
@@ -26,7 +27,7 @@ def root():
 
 @app.post("/ask")
 def ask_question(request: AskRequest, debug: bool = Query(False)):
-    result = ask_rag(request.question, debug=debug)
+    result = ask_rag(request.question, debug=debug, filename=request.filename)
     return result
 
 

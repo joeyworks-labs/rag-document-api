@@ -10,11 +10,23 @@ st.title("🤖 RAG Document Chatbot")
 # -----------------------------
 # Sidebar：上傳文件 + 清除聊天
 # -----------------------------
+from pathlib import Path
+
 st.sidebar.title("📂 Document Control")
 
 uploaded_file = st.sidebar.file_uploader(
     "Upload .md / .pdf / .txt",
     type=["md", "pdf", "txt"]
+)
+
+available_files = [
+    f.name
+    for f in Path("data/uploads").glob("*")
+]
+
+selected_file = st.sidebar.selectbox(
+    "Select document (optional)",
+    ["All Documents"] + available_files
 )
 
 # 👉 清除聊天按鈕（已整合）
@@ -66,9 +78,15 @@ if prompt := st.chat_input("Ask something about your documents..."):
     with st.chat_message("assistant"):
         with st.spinner("Thinking..."):
             try:
+                payload = {
+                    "question": prompt,
+                }
+                if selected_file != "All Documents":
+                    payload["filename"] = selected_file
+
                 res = requests.post(
                     f"{API_URL}/ask",
-                    json={"question": prompt}
+                    json=payload
                 )
 
                 if res.status_code != 200:
@@ -77,7 +95,6 @@ if prompt := st.chat_input("Ask something about your documents..."):
                     data = res.json()
                     answer = data.get("answer", "No answer")
                     sources = data.get("sources", [])
-
                     # 顯示答案
                     st.write(answer)
 

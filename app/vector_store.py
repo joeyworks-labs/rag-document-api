@@ -1,75 +1,57 @@
-import json
-from pathlib import Path
+import chromadb
+import uuid
 
-import numpy as np
+client = chromadb.PersistentClient(path="data/chroma_db")
 
-INDEX_DIR = Path("data/index")
-INDEX_DIR.mkdir(parents=True, exist_ok=True)
-
-INDEX_FILE = INDEX_DIR / "vector_index.json"
-
-vector_db = []
+collection = client.get_or_create_collection(
+    name="rag_documents"
+)
 
 
 def add_vector(embedding, text, metadata):
-    vector_db.append(
-        {
-            "embedding": np.array(embedding),
-            "text": text,
-            "metadata": metadata,
-        }
+    collection.add(
+        embeddings=[embedding],
+        documents=[text],
+        metadatas=[metadata],
+        ids=[str(uuid.uuid4())]
     )
 
 
 def clear_vector_db():
-    vector_db.clear()
+    all_items = collection.get()
+
+    if all_items["ids"]:
+        collection.delete(ids=all_items["ids"])
 
 
-def cosine_similarity(a, b):
-    return float(np.dot(a, b) / (np.linalg.norm(a) * np.linalg.norm(b)))
+def search(query_embedding, top_k, filename=None):
+    query_args = {
+        "query_embeddings": [query_embedding],
+        "n_results": top_k,
+    }
 
+    if filename:
+        query_args["where"] = {
+            "filename": filename
+        }
 
-def search(query_embedding, top_k):
-    query_vector = np.array(query_embedding)
-    results = []
+    results = collection.query(**query_args)
 
-    for item in vector_db:
-        score = cosine_similarity(query_vector, item["embedding"])
-        results.append((score, item))
+    retrieved = []
 
-    results.sort(key=lambda x: x[0], reverse=True)
-    return [item for _, item in results[:top_k]]
+    for i in range(len(results["documents"][0])):
+        retrieved.append({
+            "score": 1 - results["distances"][0][i],
+            "text": results["documents"][0][i],
+            "metadata": results["metadatas"][0][i],
+        })
+
+    return retrieved
 
 
 def save_index_to_disk():
-    serializable_data = [
-        {
-            "embedding": item["embedding"].tolist(),
-            "text": item["text"],
-            "metadata": item["metadata"],
-        }
-        for item in vector_db
-    ]
-
-    INDEX_FILE.write_text(
-        json.dumps(serializable_data, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
+    pass
 
 
 def load_index_from_disk():
-    if not INDEX_FILE.exists():
-        return
-
-    data = json.loads(INDEX_FILE.read_text(encoding="utf-8"))
-
-    vector_db.clear()
-
-    for item in data:
-        vector_db.append(
-            {
-                "embedding": np.array(item["embedding"]),
-                "text": item["text"],
-                "metadata": item["metadata"],
-            }
-        )
+    pass
